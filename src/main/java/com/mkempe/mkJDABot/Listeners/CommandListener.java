@@ -20,6 +20,8 @@
 
 package com.mkempe.mkJDABot.Listeners;
 
+import com.github.kagkarlsson.scheduler.exceptions.TaskInstanceNotFoundException;
+import com.github.kagkarlsson.scheduler.task.TaskInstanceId;
 import com.github.kagkarlsson.scheduler.task.schedule.PersistentCronSchedule;
 import com.github.kagkarlsson.shaded.cronutils.model.CronType;
 import com.github.kagkarlsson.shaded.cronutils.model.definition.CronDefinitionBuilder;
@@ -31,6 +33,7 @@ import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Role;
 import net.dv8tion.jda.api.entities.channel.Channel;
 import net.dv8tion.jda.api.entities.channel.ChannelType;
+import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
@@ -87,12 +90,88 @@ public class CommandListener extends ListenerAdapter {
     }
 
     private void showscheduledCommand(SlashCommandInteractionEvent event) {
-        event.reply("Unimplemented").setEphemeral(true).queue();
+        event.deferReply().setEphemeral(true).queue();
+
+        if (event.getGuild() == null) {
+            event.getHook().sendMessage("Error: not a server").queue();
+            return;
+        }
+
+        String guild = event.getGuild().getId();
+        String channel = null;
+        String name = null;
+
+        if (event.getOption("channel") != null)
+            channel = event.getOption("channel").getAsChannel().getId();
+        if (event.getOption("name") != null)
+            name = event.getOption("name").getAsString();
+
+        ArrayList<NotificationMessage> messages = Database.getInstance().getSchedules(guild, channel, name);
+        StringBuilder builder = new StringBuilder();
+        if (messages.size() == 0) {
+            event.getHook().sendMessage("No notifications scheduled").queue();
+            return;
+        }
+
+        for (NotificationMessage message : messages) {
+            builder.append("Name:    ").append(message.name()).append("\n");
+            Channel c = Bot.getInstance().getJDA().getChannelById(MessageChannel.class, message.channel());
+            Role r = Bot.getInstance().getJDA().getRoleById(message.role());
+
+            builder.append("Channel: ");
+            if (c == null)
+                builder.append(message.channel());
+            else
+                builder.append(c.getAsMention());
+
+            builder.append("\n");
+
+
+            builder.append("Role:    ");
+            if (r == null)
+                builder.append(message.role());
+            else
+                builder.append(r.getAsMention());
+
+            builder.append("\n");
+
+            builder.append("Cron:    ").append(message.cron()).append("\n")
+                    .append("Message: ").append(message.message().replace("\\n", "\n")).append("\n\n");
+        }
+        event.getHook().sendMessage(builder.toString()).queue();
     }
 
     private void unscheduleCommand(SlashCommandInteractionEvent event) {
-        event.reply("Unimplemented").setEphemeral(true).queue();
-//        scheduler.cancel(TaskInstanceId.of("notify", "instance1"));
+        event.deferReply().setEphemeral(true).queue();
+
+        Guild guild = event.getGuild();
+        Channel channel;
+        String name;
+
+        try {
+            channel = event.getOption("channel").getAsChannel();
+            name = event.getOption("name").getAsString();
+
+            if ((Database.getInstance().getSchedule(guild.getId(), channel.getId(), name) == null))
+                event.getHook().sendMessage("Failed: invalid name or channel").queue();
+
+            Database.getInstance().deleteSchedule(guild.getId(), channel.getId(), name);
+        } catch (NullPointerException e) {
+            event.getHook().sendMessage("Failed: missing option").queue();
+            return;
+        }
+
+        try {
+            Bot.getInstance().getScheduler().cancel(TaskInstanceId.of(
+                    NotificationMessage.task.getName(),
+                    guild.getId() + ":" + channel.getId() + ":" + name
+            ));
+        } catch (TaskInstanceNotFoundException e) {
+            event.getHook().sendMessage("Possibly failed to stop schedule").queue();
+        }
+
+        event.getHook().sendMessage("Removed notification: " + name + "\n" +
+                "From channel: " + channel.getAsMention()).queue();
     }
 
     private void scheduleCommand(SlashCommandInteractionEvent event) {
@@ -114,20 +193,30 @@ public class CommandListener extends ListenerAdapter {
             message = event.getOption("message").getAsString();
             cron = event.getOption("cron").getAsString();
 
-            Database.getInstance().insertSchedule(new NotificationMessage(guild.getId(), channel.getId(), channelType.getId(), name, role.getId(), message));
+            if (Database.getInstance().getSchedule(guild.getId(), channel.getId(), name) != null) {
+                event.getHook().sendMessage("Failed: notification task already exists").queue();
+                return;
+            }
+
+            if (Bot.getInstance().getJDA().getChannelById(MessageChannel.class, channel.getId()) == null) {
+                event.getHook().sendMessage("Failed: select text channel").queue();
+                return;
+            }
+
+            try {
+                CronParser parser = new CronParser(CronDefinitionBuilder.instanceDefinitionFor(CronType.SPRING));
+                parser.parse(cron);
+            } catch (IllegalArgumentException e) {
+                event.getHook().sendMessage("Failed: invalid cron syntax").queue();
+                return;
+            }
+
+            Database.getInstance().insertSchedule(new NotificationMessage(guild.getId(), channel.getId(), channelType.getId(), name, role.getId(), message, cron));
         } catch (NullPointerException e) {
             event.getHook().sendMessage("Failed: missing option").queue();
             return;
         }
 
-
-        try {
-            CronParser parser = new CronParser(CronDefinitionBuilder.instanceDefinitionFor(CronType.SPRING));
-            parser.parse(cron);
-        } catch (IllegalArgumentException e) {
-            event.getHook().sendMessage("Failed: invalid cron syntax").queue();
-            return;
-        }
 
         Bot.getInstance().getScheduler().schedule(NotificationMessage.task.schedulableInstance(
                 guild.getId() + ":" + channel.getId() + ":" + name,
@@ -141,7 +230,6 @@ public class CommandListener extends ListenerAdapter {
                         "Message: " + message + "\n" +
                         "Cron:    " + cron
         ).queue();
-
     }
 
     private void unknownCommand(SlashCommandInteractionEvent event) {

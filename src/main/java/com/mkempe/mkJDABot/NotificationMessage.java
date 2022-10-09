@@ -27,7 +27,7 @@ import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Role;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 
-public record NotificationMessage(String guild, String channel, int channelType, String name, String role, String message) {
+public record NotificationMessage(String guild, String channel, int channelType, String name, String role, String message, String cron) {
     public static final RecurringTaskWithPersistentSchedule<PersistentCronSchedule> task = Tasks
             .recurringWithPersistentSchedule("notify", PersistentCronSchedule.class)
             .execute((inst, ctx) -> {

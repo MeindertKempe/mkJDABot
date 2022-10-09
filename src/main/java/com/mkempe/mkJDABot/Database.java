@@ -27,6 +27,7 @@ import net.dv8tion.jda.api.entities.channel.Channel;
 
 import javax.sql.DataSource;
 import java.sql.*;
+import java.util.ArrayList;
 
 public class Database {
     private static final String NAME = "mkJDABot.db";
@@ -114,6 +115,7 @@ public class Database {
                         name         TEXT NOT NULL,
                         role         TEXT,
                         message      TEXT NOT NULL,
+                        cron         TEXT NOT NULL,
                         PRIMARY KEY (guild, channel, name)
                     );
                     """
@@ -154,8 +156,8 @@ public class Database {
         try (Connection connection = dataSource.getConnection()) {
             PreparedStatement statement = connection.prepareStatement("""
                     INSERT INTO notifications
-                    (guild, channel, channel_type, name, role, message)
-                    VALUES (?, ?, ?, ?, ?, ?);
+                    (guild, channel, channel_type, name, role, message, cron)
+                    VALUES (?, ?, ?, ?, ?, ?, ?);
                     """
             );
             statement.setString(1, message.guild());
@@ -164,6 +166,7 @@ public class Database {
             statement.setString(4, message.name());
             statement.setString(5, message.role());
             statement.setString(6, message.message());
+            statement.setString(7, message.cron());
 
             statement.executeUpdate();
         } catch (SQLException e) {
@@ -176,7 +179,7 @@ public class Database {
             PreparedStatement statement = connection.prepareStatement("""
                     DELETE FROM notifications WHERE
                     guild = ? AND
-                    channel_type = ? AND
+                    channel = ? AND
                     name = ?;
                     """
             );
@@ -213,9 +216,73 @@ public class Database {
                     results.getInt("channel_type"),
                     results.getString("name"),
                     results.getString("role"),
-                    results.getString("message")
-
+                    results.getString("message"),
+                    results.getString("cron")
             );
+
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public ArrayList<NotificationMessage> getSchedules(String guild, String channel, String name) {
+        try (Connection connection = dataSource.getConnection()) {
+            String sql = """
+                    SELECT * FROM notifications WHERE
+                    guild = ? AND
+                    channel = ? AND
+                    name = ?;
+                    """;
+            String channelOnly = """
+                    SELECT * FROM notifications WHERE
+                    guild = ? AND
+                    channel = ?;
+                    """;
+            String nameOnly = """
+                    SELECT * FROM notifications WHERE
+                    guild = ? AND
+                    name = ?;
+                    """;
+            String all = """
+                    SELECT * FROM notifications WHERE
+                    guild = ?;
+                    """;
+            if (channel == null)
+                sql = nameOnly;
+            if (name == null)
+                sql = channelOnly;
+            if (channel == null && name == null)
+                sql = all;
+
+            PreparedStatement statement = connection.prepareStatement(sql);
+            statement.setString(1, guild);
+
+            if (name != null && channel == null) {
+                statement.setString(2, name);
+            } else if (name == null && channel != null) {
+                statement.setString(2, channel);
+            } else if (name != null && channel != null){
+                statement.setString(2, channel);
+                statement.setString(3, name);
+            }
+
+            ResultSet results = statement.executeQuery();
+
+            ArrayList<NotificationMessage> messages = new ArrayList<>();
+            while (results.next()) {
+                messages.add(
+                        new NotificationMessage(
+                                results.getString("guild"),
+                                results.getString("channel"),
+                                results.getInt("channel_type"),
+                                results.getString("name"),
+                                results.getString("role"),
+                                results.getString("message"),
+                                results.getString("cron")
+                        ));
+            }
+
+            return messages;
 
         } catch (SQLException e) {
             throw new RuntimeException(e);
