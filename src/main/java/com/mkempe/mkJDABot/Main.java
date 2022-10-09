@@ -29,11 +29,22 @@ public class Main {
     private static Scanner scanner = new Scanner(System.in);
     private static Bot bot;
     private static Settings settings;
+    private static Database database;
 
     public static void main(String[] args) {
 
-        Database database = Database.getInstance();
+        database = Database.getInstance();
+        bot = Bot.getInstance();
+
         database.connect();
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("Shutting down...");
+            if (bot.isRunning())
+                bot.stop();
+
+            database.close();
+        }));
 
         settings = Settings.getInstance();
 
@@ -43,12 +54,11 @@ public class Main {
             queryAPIKey();
         }
 
-        bot = new Bot();
 
         boolean notRunning = true;
         while (notRunning) {
             try {
-                bot.run();
+                bot.start();
                 notRunning = false;
             } catch (InvalidTokenException e) {
                 System.out.println("Invalid API Key");
@@ -56,29 +66,28 @@ public class Main {
             }
         }
 
-        boolean running = true;
-        while (running) {
+        for (; ; ) {
+            System.out.print("> ");
             String input = scanner.nextLine();
 
             switch (input.toLowerCase()) {
-                case "help" -> System.out.println("Commands:\n" +
-                        "start - Start bot\n" +
-                        "stop  - Stop bot\n" +
-                        "key   - Set api key\n" +
-                        "quit  - Stop bot and exit program\n"
+                case "help" -> System.out.println("""
+                        Commands:
+                        start   - Start bot
+                        stop    - Stop bot
+                        restart - Restart bot
+                        key     - Set api key
+                        quit    - Stop bot and exit program
+                        """
                 );
-                case "key" -> queryAPIKey();
-                case "start" -> bot.run();
+                case "start" -> bot.start();
                 case "stop" -> bot.stop();
-                case "exit", "quit" -> {
-                    bot.stop();
-                    running = false;
-                }
+                case "restart" -> bot.restart();
+                case "key" -> queryAPIKey();
+                case "exit", "quit" -> System.exit(0);
+                default -> System.out.println("Unknown command, try 'help'");
             }
         }
-
-
-        database.close();
     }
 
     private static void queryAPIKey() {

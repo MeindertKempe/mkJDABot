@@ -20,11 +20,24 @@
 
 package com.mkempe.mkJDABot.Listeners;
 
+import com.github.kagkarlsson.scheduler.task.schedule.PersistentCronSchedule;
+import com.github.kagkarlsson.shaded.cronutils.model.CronType;
+import com.github.kagkarlsson.shaded.cronutils.model.definition.CronDefinitionBuilder;
+import com.github.kagkarlsson.shaded.cronutils.parser.CronParser;
+import com.mkempe.mkJDABot.Bot;
+import com.mkempe.mkJDABot.Database;
+import com.mkempe.mkJDABot.NotificationMessage;
+import net.dv8tion.jda.api.entities.Guild;
+import net.dv8tion.jda.api.entities.Role;
+import net.dv8tion.jda.api.entities.channel.Channel;
+import net.dv8tion.jda.api.entities.channel.ChannelType;
 import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.CommandData;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
+import net.dv8tion.jda.api.interactions.commands.build.OptionData;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,19 +51,104 @@ public class CommandListener extends ListenerAdapter {
     public static List<CommandData> getCommands() {
         List<CommandData> list = new ArrayList<>();
         list.add(Commands.slash("ping", "Calculate ping of the bot"));
+        list.add(
+                Commands.slash("schedule", "Schedule sending a message")
+                        .addOptions(
+                                new OptionData(OptionType.STRING, "message", "Message to send", true, false),
+                                new OptionData(OptionType.CHANNEL, "channel", "Channel to notify", true, false),
+                                new OptionData(OptionType.STRING, "name", "Name of notification", true, false),
+                                new OptionData(OptionType.ROLE, "role", "Role to notify", true, false),
+                                new OptionData(OptionType.STRING, "cron", "Cron schedule", true, false)
+                        ));
+        list.add(
+                Commands.slash("unschedule", "Unschedule message")
+                        .addOptions(
+                                new OptionData(OptionType.CHANNEL, "channel", "Channel of notification", true, false),
+                                new OptionData(OptionType.STRING, "name", "Name of notification", true, false)
+                        ));
+        list.add(
+                Commands.slash("showscheduled", "List scheduled messages")
+                        .addOptions(
+                                new OptionData(OptionType.CHANNEL, "channel", "Channel of notification", false, false),
+                                new OptionData(OptionType.STRING, "name", "Name of notification", false, false)
+                        ));
         return list;
     }
 
     @Override
     public void onSlashCommandInteraction(@NotNull SlashCommandInteractionEvent event) {
         switch (event.getName()) {
-            case "ping":
-                ping(event);
-                break;
+            case "ping" -> pingCommand(event);
+            case "schedule" -> scheduleCommand(event);
+            case "unschedule" -> unscheduleCommand(event);
+            case "showscheduled" -> showscheduledCommand(event);
+            default -> unknownCommand(event);
         }
     }
 
-    private void ping(SlashCommandInteractionEvent event) {
+    private void showscheduledCommand(SlashCommandInteractionEvent event) {
+        event.reply("Unimplemented").setEphemeral(true).queue();
+    }
+
+    private void unscheduleCommand(SlashCommandInteractionEvent event) {
+        event.reply("Unimplemented").setEphemeral(true).queue();
+//        scheduler.cancel(TaskInstanceId.of("notify", "instance1"));
+    }
+
+    private void scheduleCommand(SlashCommandInteractionEvent event) {
+        event.deferReply().setEphemeral(true).queue();
+
+        Guild guild = event.getGuild();
+        Channel channel;
+        ChannelType channelType;
+        String name;
+        Role role;
+        String message;
+        String cron;
+
+        try {
+            channel = event.getOption("channel").getAsChannel();
+            channelType = channel.getType();
+            name = event.getOption("name").getAsString();
+            role = event.getOption("role").getAsRole();
+            message = event.getOption("message").getAsString();
+            cron = event.getOption("cron").getAsString();
+
+            Database.getInstance().insertSchedule(new NotificationMessage(guild.getId(), channel.getId(), channelType.getId(), name, role.getId(), message));
+        } catch (NullPointerException e) {
+            event.getHook().sendMessage("Failed: missing option").queue();
+            return;
+        }
+
+
+        try {
+            CronParser parser = new CronParser(CronDefinitionBuilder.instanceDefinitionFor(CronType.SPRING));
+            parser.parse(cron);
+        } catch (IllegalArgumentException e) {
+            event.getHook().sendMessage("Failed: invalid cron syntax").queue();
+            return;
+        }
+
+        Bot.getInstance().getScheduler().schedule(NotificationMessage.task.schedulableInstance(
+                guild.getId() + ":" + channel.getId() + ":" + name,
+                new PersistentCronSchedule(cron)
+        ));
+
+        event.getHook().sendMessage(
+                "Set notification\n" +
+                        "Channel: " + channel.getAsMention() + "\n" +
+                        "Role:    " + role.getAsMention() + "\n" +
+                        "Message: " + message + "\n" +
+                        "Cron:    " + cron
+        ).queue();
+
+    }
+
+    private void unknownCommand(SlashCommandInteractionEvent event) {
+        event.reply("Unknown command").setEphemeral(true).queue();
+    }
+
+    private void pingCommand(SlashCommandInteractionEvent event) {
         long time = System.currentTimeMillis();
         event.reply("Pong!").setEphemeral(true) // reply or acknowledge
                 .flatMap(v ->
