@@ -22,8 +22,6 @@ package com.mkempe.mkJDABot;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import net.dv8tion.jda.api.entities.Guild;
-import net.dv8tion.jda.api.entities.channel.Channel;
 
 import javax.sql.DataSource;
 import java.sql.*;
@@ -261,7 +259,7 @@ public class Database {
                 statement.setString(2, name);
             } else if (name == null && channel != null) {
                 statement.setString(2, channel);
-            } else if (name != null && channel != null){
+            } else if (name != null){
                 statement.setString(2, channel);
                 statement.setString(3, name);
             }

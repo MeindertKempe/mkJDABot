@@ -26,7 +26,7 @@ import net.dv8tion.jda.api.exceptions.InvalidTokenException;
 import java.util.Scanner;
 
 public class Main {
-    private static Scanner scanner = new Scanner(System.in);
+    private static final Scanner scanner = new Scanner(System.in);
     private static Bot bot;
     private static Settings settings;
     private static Database database;

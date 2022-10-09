@@ -174,6 +174,10 @@ public class CommandListener extends ListenerAdapter {
                 "From channel: " + channel.getAsMention()).queue();
     }
 
+
+    //TODO when implementing notify command, use guild::channel::name as task id.
+    // Text to send and role id in database table.
+    // In command get text, role, channel, crontab. (timezone?)
     private void scheduleCommand(SlashCommandInteractionEvent event) {
         event.deferReply().setEphemeral(true).queue();
 

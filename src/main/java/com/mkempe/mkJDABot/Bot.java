@@ -63,25 +63,7 @@ public class Bot {
                 .build();
         scheduler.start();
 
-        //TODO when implementing notify command, use guild::channel::name as task id.
-        // Text to send and role id in database table.
-        // In command get text, role, channel, crontab. (timezone?)
-
         System.out.println("Bot started.");
-
-//        Guild guild;
-//        if ((guild = jda.getGuildById(702272745689579651L)) == null)
-//            return;
-//
-//        List<CommandData> list = new ArrayList<>();
-//        guild.updateCommands().addCommands(list).queue();
-
-//        jda.retrieveCommands().submit().thenAccept(list -> {
-//            System.out.println("Commands:");
-//            for (Command command : list) {
-//                System.out.printf("[%s] %s - %s\n", command.getType(), command.getName(), command.getDescription());
-//            }
-//        });
     }
 
     public void stop() {
