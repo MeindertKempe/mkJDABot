@@ -29,75 +29,28 @@ import com.github.kagkarlsson.scheduler.task.schedule.PersistentCronSchedule;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Role;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-public record NotificationMessage(String guild, String channel, int channelType, String name, String role, String message, String schedule) {
+public record NotificationMessage(
+        String guild,
+        String channel,
+        int channelType,
+        String name,
+        String role,
+        String message,
+        String schedule
+) {
+    private static final Logger logger = LoggerFactory.getLogger(NotificationMessage.class);
+
     public static final RecurringTaskWithPersistentSchedule<PersistentCronSchedule> notifyTask = Tasks
             .recurringWithPersistentSchedule("notify", PersistentCronSchedule.class)
-            .execute((inst, ctx) -> {
-                // Task instance id is in format "guildId:channelId:name"
-                String[] instId = inst.getId().split(":", 3);
-                String guildId = instId[0];
-                String channelId = instId[1];
-                String name = instId[2];
-
-                // Retrieve message details from database.
-                NotificationMessage message = Database.getInstance().getSchedule(guildId, channelId, name);
-
-                Guild guild;
-                MessageChannel channel;
-                String text;
-                Role role;
-
-                //TODO check for existance of channel (might get exception).
-                if ((guild = Bot.getInstance().getJDA().getGuildById(message.guild())) == null)
-                    return;
-                if ((channel = guild.getChannelById(MessageChannel.class, message.channel())) == null)
-                    return;
-                if ((role = guild.getRoleById(message.role())) == null)
-                    return;
-                if ((text = message.message()) == null)
-                    return;
-
-                // Allow new lines in message.
-                text = text.replace("\\n", "\n");
-
-                channel.sendMessage(role.getAsMention() + " " + text).queue();
-    });
+            .execute((inst, ctx) -> messageFromInstance(inst, ctx, false));
 
     public static final OneTimeTask<Void> reminderTask = Tasks.oneTime("reminder")
-            .execute((inst, ctx) -> {
-                // Task instance id is in format "guildId:channelId:name"
-                String[] instId = inst.getId().split(":", 3);
-                String guildId = instId[0];
-                String channelId = instId[1];
-                String name = instId[2];
+            .execute((inst, ctx) -> messageFromInstance(inst, ctx, true));
 
-                // Retrieve message details from database.
-                NotificationMessage message = Database.getInstance().getSchedule(guildId, channelId, name);
-                Database.getInstance().deleteSchedule(guildId, channelId, name);
-
-                Guild guild;
-                MessageChannel channel;
-                String text;
-                Role role;
-
-                //TODO check for existance of channel (might get exception).
-                if ((guild = Bot.getInstance().getJDA().getGuildById(message.guild())) == null)
-                    return;
-                if ((channel = guild.getChannelById(MessageChannel.class, message.channel())) == null)
-                    return;
-                if ((role = guild.getRoleById(message.role())) == null)
-                    return;
-                if ((text = message.message()) == null)
-                    return;
-
-                // Allow new lines in message.
-                text = text.replace("\\n", "\n");
-
-                channel.sendMessage(role.getAsMention() + " " + text).queue();
-    });
-
-    public static <T> void messageFromInstance(TaskInstance<T> inst, ExecutionContext ctx) {
+    public static <T> void messageFromInstance(TaskInstance<T> inst, ExecutionContext ctx, boolean deleteFromDb) {
         // Task instance id is in format "guildId:channelId:name"
         String[] instId = inst.getId().split(":", 3);
         String guildId = instId[0];
@@ -106,6 +59,13 @@ public record NotificationMessage(String guild, String channel, int channelType,
 
         // Retrieve message details from database.
         NotificationMessage message = Database.getInstance().getSchedule(guildId, channelId, name);
+        if (message == null) {
+            ctx.getSchedulerClient().cancel(inst);
+            logger.warn("Task not found in database, schedule cancelled");
+        }
+
+        if (deleteFromDb)
+            Database.getInstance().deleteSchedule(guildId, channelId, name);
 
         Guild guild;
         MessageChannel channel;
