@@ -114,8 +114,10 @@ public class Database {
                         role         TEXT,
                         message      TEXT NOT NULL,
                         schedule     TEXT NOT NULL,
+                        task_type    TEXT NOT NULL,
                         count_max    INTEGER NOT NULL,
                         count        INTEGER NOT NULL,
+                        user         TEXT NOT NULL,
                         PRIMARY KEY (guild, channel, name)
                     );
                     """
@@ -156,8 +158,8 @@ public class Database {
         try (Connection connection = dataSource.getConnection()) {
             PreparedStatement statement = connection.prepareStatement("""
                     INSERT INTO notifications
-                    (guild, channel, channel_type, name, role, message, schedule, count_max, count)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    (guild, channel, channel_type, name, role, message, schedule, task_type, count_max, count, user)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """
             );
             statement.setString(1, message.guild());
@@ -167,8 +169,10 @@ public class Database {
             statement.setString(5, message.role());
             statement.setString(6, message.message());
             statement.setString(7, message.schedule());
-            statement.setInt(8, message.countMax());
-            statement.setInt(9, message.count());
+            statement.setString(8, message.taskType());
+            statement.setInt(9, message.countMax());
+            statement.setInt(10, message.count());
+            statement.setString(11, message.user());
 
             statement.executeUpdate();
         } catch (SQLException e) {
@@ -300,8 +304,10 @@ public class Database {
                 results.getString("role"),
                 results.getString("message"),
                 results.getString("schedule"),
+                results.getString("task_type"),
                 results.getInt("count_max"),
-                results.getInt("count")
+                results.getInt("count"),
+                results.getString("user")
         );
     }
 }

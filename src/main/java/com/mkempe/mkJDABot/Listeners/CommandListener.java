@@ -31,6 +31,7 @@ import com.mkempe.mkJDABot.Database;
 import com.mkempe.mkJDABot.NotificationMessage;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.Role;
+import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.entities.channel.Channel;
 import net.dv8tion.jda.api.entities.channel.ChannelType;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
@@ -136,8 +137,14 @@ public class CommandListener extends ListenerAdapter {
 
         for (NotificationMessage message : messages) {
             builder.append("Name:      ").append(message.name()).append("\n");
+            User u = Bot.getInstance().getJDA().getUserById(message.user());
             Channel c = Bot.getInstance().getJDA().getChannelById(MessageChannel.class, message.channel());
             Role r = Bot.getInstance().getJDA().getRoleById(message.role());
+
+            builder.append("By:        ");
+            if (u == null) builder.append(message.user());
+            else builder.append(u.getAsMention());
+            builder.append("\n");
 
             builder.append("Channel:   ");
             if (c == null) builder.append(message.channel());
@@ -166,6 +173,7 @@ public class CommandListener extends ListenerAdapter {
             return;
         }
 
+        User user = event.getUser();
         Channel channel = null;
         ChannelType channelType = null;
         String name = null;
@@ -211,7 +219,17 @@ public class CommandListener extends ListenerAdapter {
             return;
         }
 
-        Database.getInstance().insertSchedule(new NotificationMessage(guild.getId(), channel.getId(), channelType.getId(), name, role.getId(), message, cron, countMax, 0));
+        Database.getInstance().insertSchedule(new NotificationMessage(guild.getId(),
+                channel.getId(),
+                channelType.getId(),
+                name,
+                role.getId(),
+                message,
+                cron,
+                NotificationMessage.notifyTask.getName(),
+                countMax,
+                0,
+                user.getId()));
 
         Bot.getInstance().getScheduler().schedule(NotificationMessage.notifyTask.schedulableInstance(
                 guild.getId() + ":" + channel.getId() + ":" + name,
@@ -253,7 +271,8 @@ public class CommandListener extends ListenerAdapter {
             return;
         }
 
-        if ((Database.getInstance().getSchedule(guild.getId(), channel.getId(), name) == null)) {
+        NotificationMessage message;
+        if ((message = Database.getInstance().getSchedule(guild.getId(), channel.getId(), name)) == null) {
             event.getHook().sendMessage("Failed: invalid name or channel").queue();
             return;
         }
@@ -262,7 +281,7 @@ public class CommandListener extends ListenerAdapter {
 
         try {
             Bot.getInstance().getScheduler().cancel(TaskInstanceId.of(
-                    NotificationMessage.notifyTask.getName(),
+                    message.taskType(),
                     guild.getId() + ":" + channel.getId() + ":" + name
             ));
         } catch (TaskInstanceNotFoundException e) {
@@ -285,6 +304,7 @@ public class CommandListener extends ListenerAdapter {
             return;
         }
 
+        User user = event.getUser();
         Channel channel = null;
         ChannelType channelType = null;
         String name = null;
@@ -347,7 +367,18 @@ public class CommandListener extends ListenerAdapter {
             return;
         }
 
-        Database.getInstance().insertSchedule(new NotificationMessage(guild.getId(), channel.getId(), channelType.getId(), name, role.getId(), message, time.toString(), NotificationMessage.COUNTNONE, 0));
+        Database.getInstance().insertSchedule(new NotificationMessage(guild.getId(),
+                channel.getId(),
+                channelType.getId(),
+                name,
+                role.getId(),
+                message,
+                time.toString(),
+                NotificationMessage.reminderTask.getName(),
+                NotificationMessage.COUNTNONE,
+                0,
+                user.getId()
+        ));
 
         Bot.getInstance().getScheduler().schedule(
                 NotificationMessage.reminderTask.instance(guild.getId() + ":" + channel.getId() + ":" + name),

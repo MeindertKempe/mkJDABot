@@ -40,8 +40,10 @@ public record NotificationMessage(
         String role,
         String message,
         String schedule,
+        String taskType,
         int countMax,
-        int count
+        int count,
+        String user
 ) {
     private static final Logger logger = LoggerFactory.getLogger(NotificationMessage.class);
     public static final int COUNTNONE = -1;
