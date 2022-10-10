@@ -323,11 +323,11 @@ public class CommandListener extends ListenerAdapter {
         zone = ZoneId.systemDefault();
 
         ZonedDateTime timeNow = ZonedDateTime.now(zone);
-        if (year == null) year = timeNow.getYear();
-        if (month == null) month = timeNow.getYear();
-        if (day == null) day = timeNow.getYear();
-        if (hour == null) hour = timeNow.getYear();
-        if (minute == null) minute = timeNow.getYear();
+        year = year == null ? timeNow.getYear() : year;
+        month = month == null ? timeNow.getMonthValue() : month;
+        day = day == null ? timeNow.getDayOfMonth() : day;
+        hour = hour == null ? timeNow.getHour() : hour;
+        minute = minute == null ? timeNow.getMinute() : minute;
 
         if (Database.getInstance().getSchedule(guild.getId(), channel.getId(), name) != null) {
             event.getHook().sendMessage("Failed: notification task already exists").queue();
