@@ -39,9 +39,12 @@ public record NotificationMessage(
         String name,
         String role,
         String message,
-        String schedule
+        String schedule,
+        int countMax,
+        int count
 ) {
     private static final Logger logger = LoggerFactory.getLogger(NotificationMessage.class);
+    public static final int COUNTNONE = -1;
 
     public static final RecurringTaskWithPersistentSchedule<PersistentCronSchedule> notifyTask = Tasks
             .recurringWithPersistentSchedule("notify", PersistentCronSchedule.class)
@@ -59,12 +62,26 @@ public record NotificationMessage(
 
         // Retrieve message details from database.
         NotificationMessage message = Database.getInstance().getSchedule(guildId, channelId, name);
+
         if (message == null) {
-            ctx.getSchedulerClient().cancel(inst);
-            logger.warn("Task not found in database, schedule cancelled");
+//            ctx.getSchedulerClient().cancel(inst);
+//            logger.warn("Task not found in database, schedule cancelled");
+            logger.warn("Task not found in database");
+            return;
         }
 
-        if (deleteFromDb)
+        boolean cancel = false;
+        if (message.countMax() > 0 && message.count() >= message.countMax() - 1) {
+//            ctx.getSchedulerClient().cancel(inst);
+            cancel = true;
+        }
+
+
+        if (message.countMax() > 0 && !cancel)
+            Database.getInstance().updateCount(guildId, channelId, name, message.count() + 1);
+
+
+        if (deleteFromDb || cancel)
             Database.getInstance().deleteSchedule(guildId, channelId, name);
 
         Guild guild;

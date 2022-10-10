@@ -2,8 +2,8 @@ plugins {
     id 'java'
     id 'application'
     id 'com.github.johnrengelman.shadow' version '7.1.2'
-    id 'project-report'
-    id 'com.jaredsburrows.license' version '0.9.0'
+//    id 'project-report'
+//    id 'com.jaredsburrows.license' version '0.9.0'
 }
 
 group 'com.mkempe'
@@ -15,6 +15,11 @@ ext {
 
 application {
     mainClass = _mainClass
+}
+
+compileJava {
+    sourceCompatibility = JavaVersion.VERSION_16
+    targetCompatibility = JavaVersion.VERSION_16
 }
 
 run {

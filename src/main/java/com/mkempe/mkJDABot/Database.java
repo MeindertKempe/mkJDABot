@@ -114,6 +114,8 @@ public class Database {
                         role         TEXT,
                         message      TEXT NOT NULL,
                         schedule     TEXT NOT NULL,
+                        count_max    INTEGER NOT NULL,
+                        count        INTEGER NOT NULL,
                         PRIMARY KEY (guild, channel, name)
                     );
                     """
@@ -154,8 +156,8 @@ public class Database {
         try (Connection connection = dataSource.getConnection()) {
             PreparedStatement statement = connection.prepareStatement("""
                     INSERT INTO notifications
-                    (guild, channel, channel_type, name, role, message, schedule)
-                    VALUES (?, ?, ?, ?, ?, ?, ?);
+                    (guild, channel, channel_type, name, role, message, schedule, count_max, count)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """
             );
             statement.setString(1, message.guild());
@@ -165,6 +167,26 @@ public class Database {
             statement.setString(5, message.role());
             statement.setString(6, message.message());
             statement.setString(7, message.schedule());
+            statement.setInt(8, message.countMax());
+            statement.setInt(9, message.count());
+
+            statement.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void updateCount(String guild, String channel, String name, int count) {
+        try (Connection connection = dataSource.getConnection()) {
+            PreparedStatement statement = connection.prepareStatement("""
+                    UPDATE notifications SET count = ?
+                    WHERE guild = ? AND channel = ? AND name = ?;
+                    """
+            );
+            statement.setInt(1, count);
+            statement.setString(2, guild);
+            statement.setString(3, channel);
+            statement.setString(4, name);
 
             statement.executeUpdate();
         } catch (SQLException e) {
@@ -208,16 +230,7 @@ public class Database {
 
             if (!results.next()) return null;
 
-            return new NotificationMessage(
-                    results.getString("guild"),
-                    results.getString("channel"),
-                    results.getInt("channel_type"),
-                    results.getString("name"),
-                    results.getString("role"),
-                    results.getString("message"),
-                    results.getString("schedule")
-            );
-
+            return getNotificationMessageFromResults(results);
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
@@ -259,7 +272,7 @@ public class Database {
                 statement.setString(2, name);
             } else if (name == null && channel != null) {
                 statement.setString(2, channel);
-            } else if (name != null){
+            } else if (name != null) {
                 statement.setString(2, channel);
                 statement.setString(3, name);
             }
@@ -268,16 +281,7 @@ public class Database {
 
             ArrayList<NotificationMessage> messages = new ArrayList<>();
             while (results.next()) {
-                messages.add(
-                        new NotificationMessage(
-                                results.getString("guild"),
-                                results.getString("channel"),
-                                results.getInt("channel_type"),
-                                results.getString("name"),
-                                results.getString("role"),
-                                results.getString("message"),
-                                results.getString("schedule")
-                        ));
+                messages.add(getNotificationMessageFromResults(results));
             }
 
             return messages;
@@ -285,5 +289,19 @@ public class Database {
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private NotificationMessage getNotificationMessageFromResults(ResultSet results) throws SQLException {
+        return new NotificationMessage(
+                results.getString("guild"),
+                results.getString("channel"),
+                results.getInt("channel_type"),
+                results.getString("name"),
+                results.getString("role"),
+                results.getString("message"),
+                results.getString("schedule"),
+                results.getInt("count_max"),
+                results.getInt("count")
+        );
     }
 }

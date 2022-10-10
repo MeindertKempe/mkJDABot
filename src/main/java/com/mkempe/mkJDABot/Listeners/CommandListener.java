@@ -47,13 +47,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.DateTimeException;
+import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.TimeZone;
+import java.util.*;
 
 public class CommandListener extends ListenerAdapter {
-    Logger logger = LoggerFactory.getLogger(CommandListener.class);
+    private final Logger logger = LoggerFactory.getLogger(CommandListener.class);
 
     public static List<CommandData> getCommands() {
         List<CommandData> list = new ArrayList<>();
@@ -66,6 +65,8 @@ public class CommandListener extends ListenerAdapter {
                                 new OptionData(OptionType.STRING, "name", "Name of notification", true, false),
                                 new OptionData(OptionType.ROLE, "role", "Role to notify", true, false),
                                 new OptionData(OptionType.STRING, "cron", "Cron schedule", true, false)
+//TODO find method to stop tasks (cancel doesn't work during task execution).
+//                                new OptionData(OptionType.INTEGER, "count", "Number of times to repeat", false, false)
                         ));
         list.add(
                 Commands.slash("unschedule", "Unschedule message")
@@ -107,102 +108,26 @@ public class CommandListener extends ListenerAdapter {
         }
     }
 
-    private void reminderCommand(SlashCommandInteractionEvent event) {
-        //TODO set timezone
-        event.deferReply().setEphemeral(true).queue();
-
-        Guild guild = event.getGuild();
-        Channel channel;
-        ChannelType channelType;
-        String name;
-        Role role;
-        String message;
-
-        int year;
-        int month;
-        int day;
-        int hour;
-        int minute;
-
-        ZonedDateTime time;
-
-        try {
-            channel = event.getOption("channel").getAsChannel();
-            channelType = channel.getType();
-            name = event.getOption("name").getAsString();
-            role = event.getOption("role").getAsRole();
-            message = event.getOption("message").getAsString();
-
-            if (Database.getInstance().getSchedule(guild.getId(), channel.getId(), name) != null) {
-                event.getHook().sendMessage("Failed: notification task already exists").queue();
-                return;
-            }
-
-            if (Bot.getInstance().getJDA().getChannelById(MessageChannel.class, channel.getId()) == null) {
-                event.getHook().sendMessage("Failed: select text channel").queue();
-                return;
-            }
-
-            OptionMapping yearOpt = event.getOption("year");
-            OptionMapping monthOpt = event.getOption("month");
-            OptionMapping dayOpt = event.getOption("day");
-            OptionMapping hourOpt = event.getOption("hour");
-            OptionMapping minOpt = event.getOption("minute");
-
-            ZonedDateTime timeNow = ZonedDateTime.now(TimeZone.getDefault().toZoneId());
-
-            year = yearOpt == null ? timeNow.getYear() : yearOpt.getAsInt();
-            month = monthOpt == null ? timeNow.getMonthValue() : monthOpt.getAsInt();
-            day = dayOpt == null ? timeNow.getDayOfMonth() : dayOpt.getAsInt();
-            hour = hourOpt == null ? timeNow.getHour() : hourOpt.getAsInt();
-            minute = minOpt == null ? timeNow.getMinute() : minOpt.getAsInt();
-
-            try {
-                time = ZonedDateTime.of(year, month, day, hour, minute, 0, 0, TimeZone.getDefault().toZoneId());
-            } catch (DateTimeException e) {
-                event.getHook().sendMessage("Failed: invalid time").queue();
-                return;
-            }
-
-            Database.getInstance().insertSchedule(new NotificationMessage(guild.getId(), channel.getId(), channelType.getId(), name, role.getId(), message, time.toString()));
-        } catch (NullPointerException e) {
-            event.getHook().sendMessage("Failed: missing option").queue();
-            return;
-        }
-
-        Bot.getInstance().getScheduler().schedule(
-                NotificationMessage.reminderTask.instance(guild.getId() + ":" + channel.getId() + ":" + name),
-                time.toInstant()
-        );
-
-        event.getHook().sendMessage(
-                "Set notification\n" +
-                        "Channel:   " + channel.getAsMention() + "\n" +
-                        "Role:      " + role.getAsMention() + "\n" +
-                        "Message:   " + message + "\n" +
-                        "Scheduled: " + time
-        ).queue();
-
-    }
-
     private void showscheduledCommand(SlashCommandInteractionEvent event) {
         event.deferReply().setEphemeral(true).queue();
 
-        if (event.getGuild() == null) {
-            event.getHook().sendMessage("Error: not a server").queue();
+        Guild guild;
+        if ((guild = event.getGuild()) == null) {
+            event.getHook().sendMessage("Failed: command only works on servers").queue();
             return;
         }
 
-        String guild = event.getGuild().getId();
         String channel = null;
         String name = null;
 
-        if (event.getOption("channel") != null)
-            channel = event.getOption("channel").getAsChannel().getId();
-        if (event.getOption("name") != null)
-            name = event.getOption("name").getAsString();
+        for (OptionMapping option : event.getOptions()) {
+            switch (option.getName()) {
+                case "channel" -> channel = option.getAsChannel().getId();
+                case "name" -> name = option.getAsString();
+            }
+        }
 
-        ArrayList<NotificationMessage> messages = Database.getInstance().getSchedules(guild, channel, name);
+        ArrayList<NotificationMessage> messages = Database.getInstance().getSchedules(guild.getId(), channel, name);
         StringBuilder builder = new StringBuilder();
         if (messages.size() == 0) {
             event.getHook().sendMessage("No notifications scheduled").queue();
@@ -215,108 +140,78 @@ public class CommandListener extends ListenerAdapter {
             Role r = Bot.getInstance().getJDA().getRoleById(message.role());
 
             builder.append("Channel:   ");
-            if (c == null)
-                builder.append(message.channel());
-            else
-                builder.append(c.getAsMention());
-
+            if (c == null) builder.append(message.channel());
+            else builder.append(c.getAsMention());
             builder.append("\n");
-
 
             builder.append("Role:      ");
-            if (r == null)
-                builder.append(message.role());
-            else
-                builder.append(r.getAsMention());
-
+            if (r == null) builder.append(message.role());
+            else builder.append(r.getAsMention());
             builder.append("\n");
 
-            builder.append("Scheduled: ").append(message.schedule()).append("\n")
-                    .append("Message:   ").append(message.message().replace("\\n", "\n")).append("\n\n");
+            builder.append("Scheduled: ").append(message.schedule()).append("\n");
+            if (message.countMax() != NotificationMessage.COUNTNONE)
+                builder.append("Count:     ").append(message.count()).append("/").append(message.countMax());
+            builder.append("Message:   ").append(message.message().replace("\\n", "\n")).append("\n\n");
         }
         event.getHook().sendMessage(builder.toString()).queue();
     }
 
-    private void unscheduleCommand(SlashCommandInteractionEvent event) {
-        event.deferReply().setEphemeral(true).queue();
-
-        Guild guild = event.getGuild();
-        Channel channel;
-        String name;
-
-        try {
-            channel = event.getOption("channel").getAsChannel();
-            name = event.getOption("name").getAsString();
-
-            if ((Database.getInstance().getSchedule(guild.getId(), channel.getId(), name) == null))
-                event.getHook().sendMessage("Failed: invalid name or channel").queue();
-
-            Database.getInstance().deleteSchedule(guild.getId(), channel.getId(), name);
-        } catch (NullPointerException e) {
-            event.getHook().sendMessage("Failed: missing option").queue();
-            return;
-        }
-
-        try {
-            Bot.getInstance().getScheduler().cancel(TaskInstanceId.of(
-                    NotificationMessage.notifyTask.getName(),
-                    guild.getId() + ":" + channel.getId() + ":" + name
-            ));
-        } catch (TaskInstanceNotFoundException e) {
-            event.getHook().sendMessage("Possibly failed to stop schedule").queue();
-        }
-
-        event.getHook().sendMessage("Removed notification: " + name + "\n" +
-                "From channel: " + channel.getAsMention()).queue();
-    }
-
-
-    //TODO when implementing notify command, use guild::channel::name as task id.
-    // Text to send and role id in database table.
-    // In command get text, role, channel, crontab. (timezone?)
     private void scheduleCommand(SlashCommandInteractionEvent event) {
         event.deferReply().setEphemeral(true).queue();
 
-        Guild guild = event.getGuild();
-        Channel channel;
-        ChannelType channelType;
-        String name;
-        Role role;
-        String message;
-        String cron;
-
-        try {
-            channel = event.getOption("channel").getAsChannel();
-            channelType = channel.getType();
-            name = event.getOption("name").getAsString();
-            role = event.getOption("role").getAsRole();
-            message = event.getOption("message").getAsString();
-            cron = event.getOption("cron").getAsString();
-
-            if (Database.getInstance().getSchedule(guild.getId(), channel.getId(), name) != null) {
-                event.getHook().sendMessage("Failed: notification task already exists").queue();
-                return;
-            }
-
-            if (Bot.getInstance().getJDA().getChannelById(MessageChannel.class, channel.getId()) == null) {
-                event.getHook().sendMessage("Failed: select text channel").queue();
-                return;
-            }
-
-            try {
-                CronParser parser = new CronParser(CronDefinitionBuilder.instanceDefinitionFor(CronType.SPRING));
-                parser.parse(cron);
-            } catch (IllegalArgumentException e) {
-                event.getHook().sendMessage("Failed: invalid cron syntax").queue();
-                return;
-            }
-
-            Database.getInstance().insertSchedule(new NotificationMessage(guild.getId(), channel.getId(), channelType.getId(), name, role.getId(), message, cron));
-        } catch (NullPointerException e) {
-            event.getHook().sendMessage("Failed: missing option").queue();
+        Guild guild;
+        if ((guild = event.getGuild()) == null) {
+            event.getHook().sendMessage("Failed: command only works on servers").queue();
             return;
         }
 
+        Channel channel = null;
+        ChannelType channelType = null;
+        String name = null;
+        Role role = null;
+        String message = null;
+        String cron = null;
+        int countMax = NotificationMessage.COUNTNONE;
+
+        for (OptionMapping option : event.getOptions()) {
+            switch (option.getName()) {
+                case "message" -> message = option.getAsString();
+                case "channel" -> {
+                    channel = option.getAsChannel();
+                    channelType = channel.getType();
+                }
+                case "name" -> name = option.getAsString();
+                case "role" -> role = option.getAsRole();
+                case "cron" -> cron = option.getAsString();
+//                case "count" -> countMax = option.getAsInt();
+            }
+        }
+
+        if (channel == null || channelType == null || name == null || role == null || message == null || cron == null) {
+            event.getHook().sendMessage("Failed: missing options").queue();
+            return;
+        }
+
+        if (Database.getInstance().getSchedule(guild.getId(), channel.getId(), name) != null) {
+            event.getHook().sendMessage("Failed: notification task already exists").queue();
+            return;
+        }
+
+        if (Bot.getInstance().getJDA().getChannelById(MessageChannel.class, channel.getId()) == null) {
+            event.getHook().sendMessage("Failed: select text channel").queue();
+            return;
+        }
+
+        try {
+            CronParser parser = new CronParser(CronDefinitionBuilder.instanceDefinitionFor(CronType.SPRING));
+            parser.parse(cron);
+        } catch (IllegalArgumentException e) {
+            event.getHook().sendMessage("Failed: invalid cron syntax").queue();
+            return;
+        }
+
+        Database.getInstance().insertSchedule(new NotificationMessage(guild.getId(), channel.getId(), channelType.getId(), name, role.getId(), message, cron, countMax, 0));
 
         Bot.getInstance().getScheduler().schedule(NotificationMessage.notifyTask.schedulableInstance(
                 guild.getId() + ":" + channel.getId() + ":" + name,
@@ -328,7 +223,143 @@ public class CommandListener extends ListenerAdapter {
                         "Channel: " + channel.getAsMention() + "\n" +
                         "Role:    " + role.getAsMention() + "\n" +
                         "Message: " + message + "\n" +
-                        "Cron:    " + cron
+                        "Cron:    " + cron +
+                        (countMax == NotificationMessage.COUNTNONE ? "" : "\nCount:   " + countMax)
+        ).queue();
+    }
+
+    private void unscheduleCommand(SlashCommandInteractionEvent event) {
+        event.deferReply().setEphemeral(true).queue();
+
+        Guild guild;
+
+        if ((guild = event.getGuild()) == null) {
+            event.getHook().sendMessage("Failed: command only works on servers").queue();
+            return;
+        }
+
+        Channel channel = null;
+        String name = null;
+
+        for (OptionMapping option : event.getOptions()) {
+            switch (option.getName()) {
+                case "channel" -> channel = option.getAsChannel();
+                case "name" -> name = option.getAsString();
+            }
+        }
+
+        if (channel == null || name == null) {
+            event.getHook().sendMessage("Failed: missing option").queue();
+            return;
+        }
+
+        if ((Database.getInstance().getSchedule(guild.getId(), channel.getId(), name) == null)) {
+            event.getHook().sendMessage("Failed: invalid name or channel").queue();
+            return;
+        }
+
+        Database.getInstance().deleteSchedule(guild.getId(), channel.getId(), name);
+
+        try {
+            Bot.getInstance().getScheduler().cancel(TaskInstanceId.of(
+                    NotificationMessage.notifyTask.getName(),
+                    guild.getId() + ":" + channel.getId() + ":" + name
+            ));
+        } catch (TaskInstanceNotFoundException e) {
+            event.getHook().sendMessage("Warning: Possibly failed to stop schedule\n" +
+                    "Removed notification: " + name + "\n" +
+                    "From channel: " + channel.getAsMention()).queue();
+            return;
+        }
+
+        event.getHook().sendMessage("Removed notification: " + name + "\n" +
+                "From channel: " + channel.getAsMention()).queue();
+    }
+
+    private void reminderCommand(SlashCommandInteractionEvent event) {
+        event.deferReply().setEphemeral(true).queue();
+
+        Guild guild;
+        if ((guild = event.getGuild()) == null) {
+            event.getHook().sendMessage("Failed: command only works on servers").queue();
+            return;
+        }
+
+        Channel channel = null;
+        ChannelType channelType = null;
+        String name = null;
+        Role role = null;
+        String message = null;
+        ZoneId zone = null;
+
+        Integer year = null;
+        Integer month = null;
+        Integer day = null;
+        Integer hour = null;
+        Integer minute = null;
+
+        for (OptionMapping option : event.getOptions()) {
+            switch (option.getName()) {
+                case "channel" -> {
+                    channel = option.getAsChannel();
+                    channelType = channel.getType();
+                }
+                case "name" -> name = option.getAsString();
+                case "role" -> role = option.getAsRole();
+                case "message" -> message = option.getAsString();
+                case "year" -> year = option.getAsInt();
+                case "month" -> month = option.getAsInt();
+                case "day" -> day = option.getAsInt();
+                case "hour" -> hour = option.getAsInt();
+                case "minute" -> minute = option.getAsInt();
+            }
+        }
+
+        if (channel == null || channelType == null || name == null || role == null || message == null) {
+            event.getHook().sendMessage("Failed: missing option").queue();
+            return;
+        }
+
+        zone = ZoneId.systemDefault();
+
+        ZonedDateTime timeNow = ZonedDateTime.now(zone);
+        if (year == null) year = timeNow.getYear();
+        if (month == null) month = timeNow.getYear();
+        if (day == null) day = timeNow.getYear();
+        if (hour == null) hour = timeNow.getYear();
+        if (minute == null) minute = timeNow.getYear();
+
+        if (Database.getInstance().getSchedule(guild.getId(), channel.getId(), name) != null) {
+            event.getHook().sendMessage("Failed: notification task already exists").queue();
+            return;
+        }
+
+        if (Bot.getInstance().getJDA().getChannelById(MessageChannel.class, channel.getId()) == null) {
+            event.getHook().sendMessage("Failed: select text channel").queue();
+            return;
+        }
+
+        ZonedDateTime time;
+        try {
+            time = ZonedDateTime.of(year, month, day, hour, minute, 0, 0, zone);
+        } catch (DateTimeException e) {
+            event.getHook().sendMessage("Failed: invalid time").queue();
+            return;
+        }
+
+        Database.getInstance().insertSchedule(new NotificationMessage(guild.getId(), channel.getId(), channelType.getId(), name, role.getId(), message, time.toString(), NotificationMessage.COUNTNONE, 0));
+
+        Bot.getInstance().getScheduler().schedule(
+                NotificationMessage.reminderTask.instance(guild.getId() + ":" + channel.getId() + ":" + name),
+                time.toInstant()
+        );
+
+        event.getHook().sendMessage(
+                "Set notification\n" +
+                        "Channel:   " + channel.getAsMention() + "\n" +
+                        "Role:      " + role.getAsMention() + "\n" +
+                        "Message:   " + message + "\n" +
+                        "Scheduled: " + time
         ).queue();
     }
 
