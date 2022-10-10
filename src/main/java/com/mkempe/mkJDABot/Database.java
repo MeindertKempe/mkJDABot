@@ -113,7 +113,7 @@ public class Database {
                         name         TEXT NOT NULL,
                         role         TEXT,
                         message      TEXT NOT NULL,
-                        cron         TEXT NOT NULL,
+                        schedule     TEXT NOT NULL,
                         PRIMARY KEY (guild, channel, name)
                     );
                     """
@@ -154,7 +154,7 @@ public class Database {
         try (Connection connection = dataSource.getConnection()) {
             PreparedStatement statement = connection.prepareStatement("""
                     INSERT INTO notifications
-                    (guild, channel, channel_type, name, role, message, cron)
+                    (guild, channel, channel_type, name, role, message, schedule)
                     VALUES (?, ?, ?, ?, ?, ?, ?);
                     """
             );
@@ -164,7 +164,7 @@ public class Database {
             statement.setString(4, message.name());
             statement.setString(5, message.role());
             statement.setString(6, message.message());
-            statement.setString(7, message.cron());
+            statement.setString(7, message.schedule());
 
             statement.executeUpdate();
         } catch (SQLException e) {
@@ -215,7 +215,7 @@ public class Database {
                     results.getString("name"),
                     results.getString("role"),
                     results.getString("message"),
-                    results.getString("cron")
+                    results.getString("schedule")
             );
 
         } catch (SQLException e) {
@@ -276,7 +276,7 @@ public class Database {
                                 results.getString("name"),
                                 results.getString("role"),
                                 results.getString("message"),
-                                results.getString("cron")
+                                results.getString("schedule")
                         ));
             }
 

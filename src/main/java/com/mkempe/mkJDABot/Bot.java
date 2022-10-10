@@ -58,7 +58,7 @@ public class Bot {
 
         Database.getInstance().initScheduler();
         this.scheduler = Scheduler
-                .create(Database.getInstance().getDataSource(), NotificationMessage.task)
+                .create(Database.getInstance().getDataSource(), NotificationMessage.notifyTask, NotificationMessage.reminderTask)
                 .threads(10)
                 .build();
         scheduler.start();
